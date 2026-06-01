@@ -5,15 +5,15 @@ This sample is meant to reproduce issue `#698`:
 - a required CI check is green
 - an auxiliary GitHub Actions check run fails
 - before the fix, Scalingo marks the deployment as `Aborted: Other job failed`
-- after the fix, Scalingo ignores the auxiliary failure if it is not a required status check on `master`
+- after the fix, Scalingo ignores the auxiliary failure if it is not a required status check on `main`
 
 ## What This Sample Contains
 
 - a minimal Node app deployable on Scalingo
 - one required GitHub Actions job: `required-ci`
-- one auxiliary GitHub Actions job on `master`: `automerge`
+- one auxiliary GitHub Actions job on `main`: `automerge`
 
-The important part is that only `required-ci` must be configured as a required status check on `master`.
+The important part is that only `required-ci` must be configured as a required status check on `main`.
 
 ## Files
 
@@ -26,15 +26,15 @@ The important part is that only `required-ci` must be configured as a required s
 ## Create The Test Repo
 
 1. Create a fresh GitHub repository.
-2. Set the default branch to `master`.
+2. Set the default branch to `main`.
 3. Copy the contents of this sample directory into that repository root.
-4. Push `master`.
+4. Push `main`.
 5. Link that GitHub repository to a dedicated test app in Scalingo.
-6. Enable auto-deploy on branch `master`.
+6. Enable auto-deploy on branch `main`.
 
 ## Configure Branch Protection
 
-On GitHub, protect `master` and configure:
+On GitHub, protect `main` and configure:
 
 1. Require a pull request before merging.
 2. Require status checks to pass before merging.
@@ -44,18 +44,18 @@ Do not select `automerge` as a required check.
 
 That mismatch is the core of the reproduction.
 
-## Baseline Test On `master`
+## Baseline Test On `main`
 
 This verifies the repo and integration are healthy before triggering the bug.
 
-1. Make a direct commit on `master` without the marker:
+1. Make a direct commit on `main` without the marker:
 
 ```bash
-git checkout master
+git checkout main
 date >> smoke.txt
 git add smoke.txt
-git commit -m "smoke: green master push"
-git push origin master
+git commit -m "smoke: green main push"
+git push origin main
 ```
 
 2. Expected result:
@@ -78,22 +78,22 @@ git checkout -b repro/hidden-check-failure
 ```bash
 date >> repro.txt
 git add repro.txt
-git commit -m "repro: hidden master-only failure [trigger-hidden-fail]"
+git commit -m "repro: hidden main-only failure [trigger-hidden-fail]"
 git push origin repro/hidden-check-failure
 ```
 
-3. Open a pull request from `repro/hidden-check-failure` to `master`.
+3. Open a pull request from `repro/hidden-check-failure` to `main`.
 4. Wait for `required-ci` to pass on the pull request.
 5. Merge with `Rebase and merge` or `Squash and merge`.
 
-Use a merge strategy that preserves the marker in the final commit message on `master`.
+Use a merge strategy that preserves the marker in the final commit message on `main`.
 
 ## Expected Result Before This Fix
 
-After the merge lands on `master`:
+After the merge lands on `main`:
 
 - `required-ci` is green
-- `automerge` fails on the `master` push
+- `automerge` fails on the `main` push
 - Scalingo receives the failing `check_run`
 - Scalingo sets its commit status to `Aborted: Other job failed`
 
@@ -101,13 +101,13 @@ This is the incorrect behavior.
 
 ## Expected Result After This Fix
 
-After the merge lands on `master`:
+After the merge lands on `main`:
 
 - `required-ci` is green
-- `automerge` fails on the `master` push
+- `automerge` fails on the `main` push
 - GitHub branch protection still considers the commit valid because `automerge` is not required
 - Scalingo ignores the failing `automerge` check run
-- Scalingo continues the deployment on `master`
+- Scalingo continues the deployment on `main`
 
 This is the expected behavior.
 
@@ -115,7 +115,7 @@ This is the expected behavior.
 
 On GitHub:
 
-- open the commit page on `master`
+- open the commit page on `main`
 - confirm `required-ci` is green
 - confirm `automerge` is red
 - confirm branch protection only requires `required-ci`
