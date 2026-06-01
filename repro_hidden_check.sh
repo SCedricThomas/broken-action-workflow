@@ -153,9 +153,20 @@ wait_pr_checks() {
   echo "Expected visible checks:"
   echo "  - Required CI / required-ci (pull_request)"
   echo "  - Required CI / required-ci (push)"
+  echo "Press Ctrl+C to stop polling."
   echo
 
-  gh pr checks "$BRANCH_NAME" --watch
+  while true; do
+    clear
+    echo "Watching checks for branch $BRANCH_NAME"
+    echo "Expected visible checks:"
+    echo "  - Required CI / required-ci (pull_request)"
+    echo "  - Required CI / required-ci (push)"
+    echo "Press Ctrl+C to stop polling."
+    echo
+    gh pr checks "$BRANCH_NAME" || true
+    sleep 5
+  done
 }
 
 land_same_sha_on_main() {
