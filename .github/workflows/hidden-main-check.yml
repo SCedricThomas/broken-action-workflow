@@ -32,9 +32,20 @@ jobs:
               ref: headSha,
             });
 
-            const message = commit.commit.message || '';
-            if (!message.includes(marker)) {
-              core.info(`No marker found on ${headSha}, skipping synthetic failure.`);
+            const messages = [commit.commit.message || ''];
+
+            for (const parent of commit.parents || []) {
+              const { data: parentCommit } = await github.rest.repos.getCommit({
+                owner,
+                repo,
+                ref: parent.sha,
+              });
+              messages.push(parentCommit.commit.message || '');
+            }
+
+            const hasMarker = messages.some((message) => message.includes(marker));
+            if (!hasMarker) {
+              core.info(`No marker found on ${headSha} or its parent commits, skipping synthetic failure.`);
               return;
             }
 
@@ -51,4 +62,3 @@ jobs:
                 summary: 'This check run intentionally fails after Required CI succeeds on main.',
               },
             });
-
