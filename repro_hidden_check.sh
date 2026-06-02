@@ -122,7 +122,7 @@ retrigger_pr() {
   local retrigger_file="retrigger-pr-checks.txt"
   printf 'retrigger %s\n' "$(date +%Y%m%d-%H%M%S)" >> "$retrigger_file"
   git add "$retrigger_file"
-  git commit -m "chore: retrigger PR checks"
+  git commit -m "chore: retrigger PR checks ${MARKER}"
   git push "$REMOTE" "$BRANCH_NAME"
 
   cat <<EOF
