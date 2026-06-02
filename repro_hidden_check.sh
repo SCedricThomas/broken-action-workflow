@@ -19,7 +19,6 @@ Usage:
   bash repro_hidden_check.sh retrigger-pr
   bash repro_hidden_check.sh open-pr
   bash repro_hidden_check.sh wait-pr-checks
-  bash repro_hidden_check.sh land-same-sha-on-main
   bash repro_hidden_check.sh show-state
 
 Environment overrides:
@@ -30,13 +29,11 @@ Environment overrides:
 
 Purpose:
   Reproduce the case where Scalingo prints "Aborted: Other job failed"
-  while the visible GitHub PR checks look green.
+  while the PR is still open.
 
 Important:
-  The strict reproduction requires the exact PR head SHA to also be pushed
-  to main later. GitHub UI merge methods rewrite SHAs, so they do NOT work
-  for this protocol. You must land the branch on main with a fast-forward
-  push from a local clone.
+  This protocol relies on a second workflow creating a failed synthetic
+  check run named "automerge" on the PR head SHA after Required CI succeeds.
 EOF
 }
 
@@ -90,13 +87,13 @@ Next steps:
    Expected:
    - Required CI / required-ci (pull_request)
    - Required CI / required-ci (push)
-4. Do NOT merge with the GitHub UI.
-5. When the PR head SHA shows the visible green checks you want, run:
-   bash repro_hidden_check.sh land-same-sha-on-main
+   - Auto Merge / automerge can appear as a failed synthetic check run
 
-Why:
-GitHub UI merge methods rewrite SHAs. The strict bug reproduction needs
-this exact PR SHA to be fast-forwarded onto $BASE_BRANCH.
+Target outcome:
+- the PR stays open
+- Required CI stays green
+- a separate failed "automerge" check run is attached to the PR SHA
+- Scalingo can print "Aborted: Other job failed"
 EOF
 }
 
@@ -139,9 +136,10 @@ way to get the visible PR check surface populated.
 Now wait for the PR head SHA to show:
   - Required CI / required-ci (pull_request)
   - Required CI / required-ci (push)
+  - Auto Merge / automerge can appear as a failed synthetic check run
 
 Then run:
-  bash repro_hidden_check.sh land-same-sha-on-main
+  bash repro_hidden_check.sh wait-pr-checks
 EOF
 }
 
@@ -153,6 +151,7 @@ wait_pr_checks() {
   echo "Expected visible checks:"
   echo "  - Required CI / required-ci (pull_request)"
   echo "  - Required CI / required-ci (push)"
+  echo "  - Auto Merge / automerge can appear as a failed synthetic check run"
   echo "Press Ctrl+C to stop polling."
   echo
 
@@ -162,46 +161,12 @@ wait_pr_checks() {
     echo "Expected visible checks:"
     echo "  - Required CI / required-ci (pull_request)"
     echo "  - Required CI / required-ci (push)"
+    echo "  - Auto Merge / automerge can appear as a failed synthetic check run"
     echo "Press Ctrl+C to stop polling."
     echo
     gh pr checks "$BRANCH_NAME" || true
     sleep 5
   done
-}
-
-land_same_sha_on_main() {
-  git fetch "$REMOTE"
-  git checkout "$BASE_BRANCH"
-  git reset --hard "$REMOTE/$BASE_BRANCH"
-  git merge --ff-only "$REMOTE/$BRANCH_NAME"
-
-  local sha
-  sha="$(git rev-parse HEAD)"
-
-  cat <<EOF
-
-Local $BASE_BRANCH now fast-forwards to PR SHA:
-  $sha
-
-About to push the exact PR SHA onto $BASE_BRANCH.
-
-This is the critical step that can make:
-  - visible PR checks stay green
-  - Auto Merge / automerge (push) fail on the same SHA
-  - Scalingo print "Aborted: Other job failed"
-
-If your repo rules block direct pushes to $BASE_BRANCH, temporarily allow
-this one push or bypass as admin, then run:
-
-  git push $REMOTE $BASE_BRANCH
-
-After the push, inspect the same SHA in GitHub:
-  - Required CI / required-ci (pull_request) green
-  - Required CI / required-ci (push) green
-  - Auto Merge / automerge (push) red
-
-Then inspect Scalingo for the same SHA.
-EOF
 }
 
 cmd="${1:-}"
@@ -217,9 +182,6 @@ case "$cmd" in
     ;;
   wait-pr-checks)
     wait_pr_checks
-    ;;
-  land-same-sha-on-main)
-    land_same_sha_on_main
     ;;
   show-state)
     show_state
