@@ -1,133 +1,118 @@
-# GitHub Hidden Checks Repro
+# Hidden Dependabot Check Repro
 
-This sample is meant to reproduce issue `#698`:
+This repo now targets the closer-to-production case behind issue `#698`:
 
-- a required CI check is green
-- an auxiliary GitHub Actions check run fails
-- before the fix, Scalingo marks the deployment as `Aborted: Other job failed`
-- after the fix, Scalingo ignores the auxiliary failure if it is not a required status check on `main`
+- visible PR checks are green
+- the merged `main` commit later receives a failed `Dependabot` check
+- the failed check is detached from PR context and easy to miss in normal PR review
+- old Scalingo behavior may treat that failed auxiliary check as blocking
 
-## What This Sample Contains
+## What This Repo Contains
 
 - a minimal Node app deployable on Scalingo
-- one required GitHub Actions job: `required-ci`
-- one auxiliary GitHub Actions job on `main`: `automerge`
+- one required visible CI job: `required-ci`
+- a minimal Bundler manifest used only to give Dependabot a real ecosystem to scan
+- a real `.github/dependabot.yml` repro configuration with intentionally broken registry auth
 
-The important part is that only `required-ci` must be configured as a required status check on `main`.
+The repo no longer relies on synthetic `automerge` check runs.
+
+## Why This Is Closer To The Real Bug
+
+The `Scalingo/api` occurrence on commit `6898bcc8dbad085572988f00958ea12066a39b61` had:
+
+- visible main CI checks green
+- a separate failed check run named `Dependabot`
+- a GitHub-internal workflow run with path `dynamic/dependabot/dependabot-updates`
+- `pull_requests: []` on that hidden failure
+
+This repo is set up to trigger a real Dependabot-originated failure on the merged `main` SHA instead of a synthetic GitHub Actions check.
 
 ## Files
 
 - `.github/workflows/required-ci.yml`
-- `.github/workflows/automerge.yml`
+- `.github/dependabot.yml`
+- `Gemfile`
 - `Procfile`
 - `package.json`
 - `server.js`
+- `repro_dependabot_hidden_check.sh`
 
-## Create The Test Repo
+## GitHub Setup
 
-1. Create a fresh GitHub repository.
-2. Set the default branch to `main`.
-3. Copy the contents of this sample directory into that repository root.
-4. Push `main`.
-5. Link that GitHub repository to a dedicated test app in Scalingo.
-6. Enable auto-deploy on branch `main`.
+1. Use `main` as the default branch.
+2. Link the repository to a dedicated Scalingo app.
+3. Enable auto-deploy for `main`.
+4. Enable review apps if you also want to observe PR deployments.
 
-## Configure Branch Protection
+## Branch Protection
 
-On GitHub, protect `main` and configure:
+Protect `main` and configure:
 
 1. Require a pull request before merging.
 2. Require status checks to pass before merging.
 3. Select only `required-ci` as a required check.
 
-Do not select `automerge` as a required check.
+Do not make any `Dependabot` check required.
 
-That mismatch is the core of the reproduction.
+## Dependabot Setup
 
-## Baseline Test On `main`
+This repro intentionally expects the top-level registry secret referenced in `.github/dependabot.yml` to be missing or unusable:
 
-This verifies the repo and integration are healthy before triggering the bug.
+- `BROKEN_RUBYGEMS_TOKEN`
 
-1. Make a direct commit on `main` without the marker:
+Do not create a valid Dependabot secret for that name.
 
-```bash
-git checkout main
-date >> smoke.txt
-git add smoke.txt
-git commit -m "smoke: green main push"
-git push origin main
-```
+The config is meant to validate successfully, then fail later when GitHub runs the hidden Dependabot update workflow on the merged `main` commit.
 
-2. Expected result:
-   - `required-ci` succeeds
-   - `automerge` succeeds
-   - Scalingo deploys successfully
+## Repro Protocol
 
-## Reproduce The Original Bug With A New Branch
-
-The auxiliary workflow fails only when the merged commit message contains `[trigger-hidden-fail]`.
-
-1. Create a branch:
+From the repo root:
 
 ```bash
-git checkout -b repro/hidden-check-failure
+bash repro_dependabot_hidden_check.sh prepare
+bash repro_dependabot_hidden_check.sh open-pr
+bash repro_dependabot_hidden_check.sh wait-pr-checks
 ```
 
-2. Add a commit with the marker in the commit message:
+Then merge the PR normally in GitHub.
+
+The helper script touches only `.github/dependabot.yml`, which is deliberate: the target behavior is that a merge changing the Dependabot config triggers the later hidden Dependabot run on the merge SHA.
+
+## Expected Before Merge
+
+On the open PR:
+
+- `Required CI / required-ci (pull_request)` is green
+- `Required CI / required-ci (push)` is green
+- no failed `Dependabot` check is visible in the normal PR checks list
+
+## Expected After Merge
+
+On the merged `main` commit:
+
+- `Required CI / required-ci (push)` stays green
+- GitHub later adds a failed check named `Dependabot`
+- that `Dependabot` check is not part of branch protection
+
+Inspect it with:
 
 ```bash
-date >> repro.txt
-git add repro.txt
-git commit -m "repro: hidden main-only failure [trigger-hidden-fail]"
-git push origin repro/hidden-check-failure
+bash repro_dependabot_hidden_check.sh show-main-checks PR_NUMBER
 ```
 
-3. Open a pull request from `repro/hidden-check-failure` to `main`.
-4. Wait for `required-ci` to pass on the pull request.
-5. Merge with `Rebase and merge` or `Squash and merge`.
+## Scalingo Expectation
 
-Use a merge strategy that preserves the marker in the final commit message on `main`.
+Before the fix:
 
-## Expected Result Before This Fix
+- Scalingo may treat the failed `Dependabot` check as blocking
+- deployment or review app status can become `Aborted: Other job failed`
 
-After the merge lands on `main`:
+After the fix:
 
-- `required-ci` is green
-- `automerge` fails on the `main` push
-- Scalingo receives the failing `check_run`
-- Scalingo sets its commit status to `Aborted: Other job failed`
+- Scalingo should ignore that failed `Dependabot` check if it is not required on `main`
 
-This is the incorrect behavior.
+## Notes
 
-## Expected Result After This Fix
-
-After the merge lands on `main`:
-
-- `required-ci` is green
-- `automerge` fails on the `main` push
-- GitHub branch protection still considers the commit valid because `automerge` is not required
-- Scalingo ignores the failing `automerge` check run
-- Scalingo continues the deployment on `main`
-
-This is the expected behavior.
-
-## Useful Checks During Validation
-
-On GitHub:
-
-- open the commit page on `main`
-- confirm `required-ci` is green
-- confirm `automerge` is red
-- confirm branch protection only requires `required-ci`
-
-In `scalingo-github-hook` logs:
-
-- before the fix, you should see the failed `check_run` lead to `Status failure received: marking the deployment as aborted`
-- after the fix, the non-required context should be ignored
-
-## Why This Reproduces `#698`
-
-GitHub exposes both checks as check runs, but only one is part of branch protection.
-
-Before the fix, the integration treated any failed GitHub check run as blocking.
-After the fix, the integration filters GitHub checks to the required status-check contexts for the protected branch before deciding whether to abort the deployment.
+- Dependabot processing is asynchronous. The hidden failed check can appear after the merge succeeds.
+- If GitHub does not produce a hidden Dependabot run on the first try, run the protocol again. Updating `.github/dependabot.yml` is the intended trigger surface.
+- The Node app and CI remain intentionally simple. The Bundler files exist only to give Dependabot a real update target.

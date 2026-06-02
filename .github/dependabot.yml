@@ -1,0 +1,23 @@
+# repro-touch: baseline
+version: 2
+
+registries:
+  broken-rubygems:
+    type: rubygems-server
+    url: https://rubygems.pkg.github.com/scalingo-hidden-checks-repro
+    username: x-access-token
+    password: ${{secrets.BROKEN_RUBYGEMS_TOKEN}}
+    replaces-base: true
+
+updates:
+  - package-ecosystem: bundler
+    directory: /
+    registries:
+      - broken-rubygems
+    labels:
+      - dependencies
+      - hidden-check-repro
+    open-pull-requests-limit: 1
+    schedule:
+      interval: daily
+      time: "09:00"
